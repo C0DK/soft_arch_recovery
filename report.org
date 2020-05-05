@@ -152,23 +152,26 @@ be done via reflection, making the solution a mixture of dynamic and static code
 The upside of this, is that there is a certainty that the findings are
 reflecting the actual running piece of software at runtime.
 
-The paper is written in org-mode in Emacs, and the sourcecode can be found [TODO
-here]. Any reader that utilizes the Emacs editor can browse the sourcefiles, and
-can more easily play around with the snippets and intermediate results, however
-this is only for advanced users. The repository also contains the final snippets
-as stand alone scripts in a slightly modified version for readability, and can
-be inspected for any interested novice python user.
+The paper is written in org-mode in Emacs, and the sourcecode can be found on
+github[fn:report_source]. Any reader that utilizes the Emacs editor can browse
+the sourcefiles, and can more easily play around with the snippets and
+intermediate results, however this is only for advanced users. The repository
+also contains the final snippets as stand alone scripts in a slightly modified
+version for readability, and can be inspected for any interested novice python
+user.
 
 * Data Gathering
 Before delving into the generation of the views, we will start by gathering
 information about the Flask package.
 Initially we install the package from pip[fn:pip], whereafter we simply import
 the module, and check the docstring, the string containing the explanation of
-the package. Python objects has various so called /magic methods/,
+the package. Additionally, the version number is included, to make it easier
+for the reader to reason about any deviation to the ones shown in the report.
 
 #+BEGIN_SRC python :results output :exports both
 import flask
 print(flask.__doc__)
+print("version:", flask.__version__)
 #+END_SRC
 
 #+RESULTS:
@@ -183,6 +186,7 @@ print(flask.__doc__)
     :copyright: 2010 Pallets
     :license: BSD-3-Clause
 
+version: 1.1.2
 #+end_example
 
 This lets us know that the framework should essentially be small in size, which
@@ -230,20 +234,27 @@ def hello_world():
     return 'Hello, World!'
 #+END_SRC
 
-Next lets look at all objects and classes, that flask framework exposes, i.e all
-modules, functions, types and constants that can be imported by importing the
-flask framework.
-We will generate a helper function for fetching these, utilizing the =dir=
-function, which returns a list of attributes of a given object, here
-a unspecified module.[fn:dirfunc]
+Next, lets look at all objects and classes, that the flask framework exposes,
+i.e all modules, functions, types and constants that can be imported by
+importing the flask framework. We will generate a helper function for fetching
+these, utilizing the =dir= function, which returns a list of attributes of a
+given object, here a unspecified module.[fn:dirfunc]
 
 #+BEGIN_SRC python :exports code :session main
-def get_objs(module):
+from types import ModuleType
+from typing import List
+def get_objs(module: ModuleType) -> List[object]:
   return [
     (name,getattr(module,name))
     for name in dir(module)
   ]
 #+END_SRC
+
+#+RESULTS:
+: Traceback (most recent call last):
+:   File "<stdin>", line 11, in <module>
+:   File "<string>", line 3, in <module>
+: NameError: name 'ModeuleType' is not defined
 
 
 Any module and instance
@@ -259,7 +270,9 @@ import flask
 def print_list(elements):
   # cast to list, so it works for generators and sets
   elements = list(elements)
-  formatted ='\n- ' +('\n- '.join(elements[:5]))
+  formatted ='\n- ' +('\n- '.join(
+    str(el) for el in elements[:5]
+  ))
   print(
     f"{len(elements)} elements. "
     f"Among others:{formatted}"
@@ -274,7 +287,7 @@ print_list(
 #+END_SRC
 
 #+RESULTS:
-: 54 elements. Among others:
+: 55 elements. Among others:
 : - Blueprint (<class 'type'>)
 : - Config (<class 'type'>)
 : - Flask (<class 'type'>)
@@ -406,8 +419,6 @@ qualifier would be =flask.app=, because we are currently in the flask applicatio
 we can convert these to absolute name, and ignore the =.= import.
 
 #+BEGIN_SRC python :results output :exports both :session main
-from typing import List
-from types import ModuleType
 def get_abs_imports(
     module:ModuleType,
     base_name:str
@@ -459,6 +470,7 @@ def recursive_print_imports(
    if module in visited:
      return
    visited.append(module)
+   print_label(module)
    for import_name in get_abs_imports(module, base_name):
      internal = import_name.startswith(base_name)
      if not internal and only_internal:
@@ -474,28 +486,19 @@ def recursive_print_imports(
          only_internal
        )
 
-def chart_imports(module:ModuleType, only_internal:bool = True):
-  print_label(module)
-  recursive_print_imports(module, "flask", only_internal)
-
 #+END_SRC
 
-#+RESULTS:
-
 These helper functions can then be utilized to render the component diagram.
-Initially I only checked the =flask= module, however i later realized that it
-did not import the testing modules. Therefore the following snippet, which
-generates the component graph, also checks the =flask.testing= module.
-Initially, lets only look at the internal module.
 #+NAME: dependency-internal
 #+BEGIN_SRC python :results output :exports code :session main
-# The previos snippet isnt rerun everytime we run this,
-# seo we have to reset visited.
 visited = []
-import flask
-import flask.testing
-chart_imports(flask, only_internal=True)
-chart_imports(flask.testing, only_internal=True)
+flask_modules = [
+  module
+  for label, module in sys.modules.items()
+  if label.startswith("flask")
+]
+for module in flask_modules:
+  recursive_print_imports(module, "flask", only_internal=True)
 #+END_SRC
 
 
@@ -508,23 +511,22 @@ digraph {
 }
 #+END_SRC
 
-#+RESULTS:
-[[file:images/dependency-internal.png]]
 
-
+These images can also be seen in the sourcefiles of the report[fn:report_source].
 The structure seems clear and well though out. You can see a clear hierarchy,
 and a modular construction of the system. This is naturally a good sign. We also
 see that there is no circular dependencies, and, based on the titles of the
 modules, seems to have a clear separation of responsibilities.
 #+NAME: dependency-external
 #+BEGIN_SRC python :results output :exports code :session main
-# The previos snippet isnt rerun everytime we run this,
-# seo we have to reset visited.
 visited = []
-import flask
-import flask.testing
-chart_imports(flask, only_internal=False)
-chart_imports(flask.testing, only_internal=False)
+flask_modules = [
+  module
+  for label, module in sys.modules.items()
+  if label.startswith("flask")
+]
+for module in flask_modules:
+  recursive_print_imports(module, "flask", only_internal=False)
 #+END_SRC
 
 
@@ -537,628 +539,200 @@ digraph {
 }
 #+END_SRC
 
+#+RESULTS:
+[[file:images/dependency-external.png]]
+
 Here we can see various dependencies, of different types and importance. At the
 lowest level, with the largest count of on incoming edges, we see the =Werkzeug=
 module. This highlights the fact that there is a closely knitted relationship
 to =Werkzeug=.  The base module, =flask=, depends only on very few external
 dependencies, and with the external modules included, it is clear to see that
-functionality is wrapped through the sub modules.
+functionality is wrapped through the sub modules. We can, however, also see that
+=flask.json.tag= seems to have no usage. This can be because references are
+implicit, due to the dynamic nature of the language. Upon inspecting the docstring
+this seems to be the case. I have manually picked the line of interest in the
+following snippet, for briefness.
+#+BEGIN_SRC python :results output :exports both :session main
+print(flask.json.tag.__doc__.split("\n")[4])
+#+END_SRC
 
-From this we can see a clear structure, additionally the architecture seems to
-be of high quality.
+#+RESULTS:
+: A compact representation for lossless serialization of non-standard JSON types.
+
+The observed structure is clear and hierarchical, and seems to be of high
+quality.
 ** Class diagram
-The initial list of identifiers we fetched, via the ==
-
-Looking at the attributes exposed in the initial data gathering snippet, we can
-see a both classes and instances. Anything of type =<class 'type'>= is a class,
-as the type of a class is a type, whereas any "specific" type, anything that
-isn't a python-keyword, is an instance, for instance =<class
-'flask.signals._Fakesignal'>=. The list of classes and instances is however
-rather long, so initially I would like to look simply look at the =Flask=
-object, as that is the Application class, the main class of the framework.
-
-Let's first check if it implements any super classes.
+The class diagram should contain both association, but also inheritance, and
+therefore both types of relations needs to be understood. This section will
+first show how these relations can be found, and afterwards generate a graph
+based on these connections. Initially we will focus on the =flask.Flask= class,
+as it is the core of the Flask framework class.
 *** Inheritance
+To check for inheritance, we can utilize the =__base__= function that is exposed
+on classes. The following snippet will extract a list of all superclasses of the
+=flask.Flask=, and then display the documentation for each.
 #+BEGIN_SRC python :results output :exports both
 import flask
-dependencies = [
+superclasses = [
   f"{dep.__name__}:\n  Docs: {dep.__doc__}"
   for dep in flask.Flask.__bases__
  ]
-print("Flask is based on:",*dependencies, sep="\n")
+print(*superclasses, sep="\n")
 #+END_SRC
 
-We learned little other than it depends on an undocumented class.
+#+RESULTS:
+: _PackageBoundObject:
+:   Docs: None
+
+We learned little other than it depends on an undocumented class, =_PackageBoundObject=.
 
 Instead we can try to look at what different functions, classes and instances
 the =Flask= class references.
 
+
+*** Check for references to classes in sourcecode
+The dynamic nature of Python makes references a difficult thing to gather.
+Python did include the =typing= library in Python3.5, which makes type
+annotation easier, and this is used for the snippet of this paper, however few
+frameworks utilize it. For this reason we can only be certain of any explicit
+dependencies. If, for instance, a function depends on a certain input type, it
+can be impossible to know the type as this is essentially implicit.
 Worth noting is that due to the dynamically typing of python, it can be
 difficult to get a list of dependencies and references inside the function,
 however we can see any direct usage, however any expected input types of various
 functions aren't possible to deduce without any typing or usage examples.
 
-*** Check for references to classes in sourcecode
-As we can get the list of all defined classes, functions and variables
-accessible in the flask application, it should be relatively painless to check
-if these are defined inside the sourcecode of this class. We will limit our
-search to classes, and ignore dependencies on functions and modules, even though
-functions might be interesting as well, however that will be considered an
-alternative view. It is however important that we check the =__dir__= of the
-correct module. We can easily see where the Flask application is defined by
-simply checking the output of the =__str__= function by printing it:
-#+BEGIN_SRC python :results output :exports both
-import flask
-print(flask.Flask)
-#+END_SRC
+We, therefore, limit the scope of the class diagram to any explicit dependency.
 
-#+RESULTS:
-: <class 'flask.app.Flask'>
+Utilizing the =inspect= module and the list of available classes, we can check
+if the source contains any reference to any of the available classes, which
+illuminates a dependency. The class diagram will be limited to dependencies on
+other classes, so any dependency on specific functions are hidden. These could
+easily be integrated as well, but are hidden for the sake of readability.
 
-Which then means that we have to check =flask.app.__dir__=.
+To do this, we initially need some helper functions, to remove comments and
+strings. References to an object in comments might yield interesting results as
+well, and illuminate references in docstrings, however for the time being, these
+are ignored as to make sure that only actual dependencies are accounted for.
 
-The following snippet checks the source code of
-#+BEGIN_SRC python :results output :exports both :session class
-import inspect
+Here we print all references the sourcecode of =flask.Flask= has to other classes.
+#+BEGIN_SRC python :results output :exports both :session main
 import re
-import flask
 
+def remove_comments_and_strings(code: str) -> str:
+    code = re.sub(re.compile("#.*?\n" ) ,"" ,code)
+    code = re.sub(re.compile("\"\"\".*?\"\"\"", re.DOTALL) ,"" ,code)
+    code = re.sub(re.compile("\".*?\"" ) ,"" ,code)
+    code = re.sub(re.compile("\'.*?\'" ) ,"" ,code)
+    code = re.sub(re.compile("\`.*?\`" ) ,"" ,code)
+    return code
 
-#remove comments
-def remove_comments_and_strings(string):
-    string = re.sub(re.compile("#.*?\n" ) ,"" ,string)
-    string = re.sub(re.compile("\"\"\".*?\"\"\"", re.DOTALL) ,"" ,string)
-    string = re.sub(re.compile("\".*?\"" ) ,"" ,string)
-    string = re.sub(re.compile("\'.*?\'" ) ,"" ,string)
-    string = re.sub(re.compile("\`.*?\`" ) ,"" ,string)
-    return string
+def get_clean_source(obj: object) -> str:
+  return remove_comments_and_strings(inspect.getsource(obj))
 
-source = inspect.getsource(flask.Flask)
-identifiers = flask.app.__dir__()
-source = remove_comments_and_strings(source)
-used_identifiers = [
-  f"- {identifier}"
-  for identifier in identifiers
-  if re.findall(f"[^.\w\d]{identifier}", source, re.MULTILINE)
-  and identifier is not flask.Flask.__name__
-  and isinstance(getattr(flask.app, identifier), type)
-]
-print(
-  f"count: {len(used_identifiers)}",
-  ,*used_identifiers[:5],
-  sep="\n"
+def get_references_for_module_obj(source: str, module_name: str, obj_name: str):
+  output = []
+  matches = set(
+    match[0]
+    for match in
+    re.findall(f"[^.\w\d]({obj_name}(\.[\w\d_]+)+)", source, re.MULTILINE)
+  )
+  for match in matches:
+    try:
+      while not isinstance(eval(module_name + "." + match), type):
+        match = ".".join(match.split(".")[:-1])
+    except (AttributeError, SyntaxError):
+      continue
+    output.append(eval(module_name + "." + match))
+  return output
+
+def get_references(klass: type) -> List[type]:
+  source = get_clean_source(klass)
+  module_name =klass.__module__
+  module = eval(module_name)
+  output = []
+  for obj_name, obj in get_objs(module):
+    if obj is klass:
+      continue
+    if isinstance(obj, ModuleType):
+      output += get_references_for_module_obj(source, module_name, obj_name)
+    elif (
+      isinstance(obj, type)
+      and re.findall(f"[^.\w\d]{obj_name}", source, re.MULTILINE)
+    ):
+      output.append(obj)
+  return set(output)
+print_list(
+  ref.__name__
+  for ref in get_references(flask.Flask)
 )
 #+END_SRC
 
 #+RESULTS:
-: count: 28
-: - timedelta
-: - chain
+: 30 elements. Among others:
+: - BadRequestKeyError
+: - RoutingException
 : - Headers
-: - ImmutableDict
-: - BadRequest
+: - Map
+: - AppContext
 
-We here see a lot of direct dependencies through usage, which also shows
-interesting classes in regards to the structure of flask itself. Presumably the
-=Request= class is interesting to look at, and look at the attributes of, when
-handling any data sent to the server, for example.
-We see some rather generic dependencies as well, for instance =timedelta=, which
-is a python class used for keeping track of relative time. We also see a couple
-of different exception based classes.
+We can then see a wide variety of different dependencies, some which are more
+interesting than other. Of the first 5, we can see multiple exceptions, and
+further down the list we can see the =Request= class, which is of higher
+interest, as it presumably contains information about web requests in context of
+the web framework.
 *** Generating the graph
-Based on these two principles, we can generate a graph that looks at association
-as well as inheritance. The following snippet recursively checks all classes
-exposed by =flask=, and maps their references (these are both in attributes,
-calls and inheritance), and then maps all these throughout the framework,
-stopping when reaching an external dependency.
+Based on these two prior snippets, we can recursively find references and then
+generate yet another graph.
 
 We ignore the methods and attributes of the classes and only focus on the
 relations between them. The current documentation is a great source for the
-content and intent of each class.
+content and intent of each class. This is partially to keep the graph simple,
+but also because of the difficulty of dynamically finding the functions of
+highest importance.
 
-Any internal classes that are not linked to any of the base classes are not
-displayed as they are assumed to be ghost code. Grey arrows are representing
-association, and black arrows are representing inheritance. This is not UML,
-however it does, in my opinion, obviously show what is what, and is easier to
-see on the relatively clustered diagram.
-
-
-In the following snippet i fought a lot with module imports. it is rather easy
-to detech a mention of a specific class, i.e ==Flask==, however i soon realized
-that if the class usage was based on a module import, then the =__dir__=
-function naturally only showed the module, not all the classes that module
-exposed, and therefore wouldn't reveal ==
-
+The script checks all internal classes and any external direct dependencies of
+these. Grey arrows are representing association, and black arrows are
+representing inheritance. Arrows show the direction of the dependency.
 
 #+NAME: class-diagram
-#+BEGIN_SRC python :results output :exports code :session class
-from types import ModuleType
-import inspect
-import re
+#+BEGIN_SRC python :results output :exports code :session main
 import flask
 import flask.testing
 
-def escape(label):
-  # Some identifier names aren't acceptable by graphviz
-  return label.replace(".","__")
-
-blacklist = []
-def draw_dependency(klass, dep):
-  color = '[color="darkgrey"]' if not dep in klass.__bases__ else ''
-  dep_label = dep.__name__
+def print_module(dep):
   print(
-    f'{hash(klass)} -> {hash(dep)} {color}\n'
-    f'{hash(dep)} [label=\"{dep_label}\"]\n'
-    f'subgraph cluster_{escape(dep.__module__)}{{\n'
+    f'subgraph cluster_{abs(hash(dep.__module__))}{{\n'
     f'{hash(dep)};\n'
     f'label=\"{dep.__module__}\"\n}}'
   )
 
-def map_dependencies(klass):
-  if klass in blacklist or not klass.__module__.startswith("flask"):
+visited = []
+def map_dependencies(klass: type):
+  if klass in visited or not klass.__module__.startswith("flask"):
     return
-  blacklist.append(klass)
-  source =inspect.getsource(klass)
-  source = remove_comments_and_strings(source)
-  module_name =klass.__module__
-  # get the module by name
-  module = eval(module_name)
-  identifiers = module.__dir__()
-  for identifier_name in identifiers:
-    identifier =getattr(module, identifier_name)
-
-    if identifier is klass:
-      continue
-    # if identifier is a module do something:
-    if isinstance(identifier, ModuleType):
-        matches = set(
-          match[0]
-          for match in
-          re.findall(f"[^.\w\d]({identifier_name}(\.[\w\d_]+)+)", source, re.MULTILINE)
-          )
-        for match in matches:
-            try:
-              while match and not isinstance(eval(module_name+"."+match), type):
-               match = ".".join(match.split(".")[:-1])
-            except AttributeError:
-              continue
-            if not match:
-              continue
-            draw_dependency(klass, eval(module_name+"."+match))
-    elif (isinstance(identifier, type)
-      and re.findall(f"[^.\w\d]{identifier_name}", source, re.MULTILINE)):
-        draw_dependency(klass, identifier)
-        map_dependencies(identifier)
-
-for identifier_name in flask.__dir__():
-  identifier = getattr(flask, identifier_name)
-  if isinstance(identifier, type):
-    print(f'{hash(identifier)} [label=\"{identifier_name}\"]\n')
-    map_dependencies(identifier)
-for identifier_name in flask.testing.__dir__():
-  identifier = getattr(flask.testing, identifier_name)
-  if isinstance(identifier, type):
-    print(f'{hash(identifier)} [label=\"{identifier_name}\"]\n')
-    map_dependencies(identifier)
+  print_module(klass)
+  print_label(klass)
+  visited.append(klass)
+  for ref in get_references(klass):
+    print_dependency(
+      klass,
+      ref,
+      "darkgrey" if not ref in klass.__bases__ else ""
+    )
+    print_module(ref)
+    print_label(ref)
+    map_dependencies(ref)
+flask_klasses =  set(
+  obj
+  for module in flask_modules
+  for _, obj in get_objs(module)
+  if isinstance(obj, type)
+  and obj.__module__.startswith("flask.")
+)
+for obj in flask_klasses:
+  map_dependencies(obj)
 #+END_SRC
-
-#+RESULTS: class-diagram
-#+begin_example
-5867775848357 [label="Markup"]
-
-5867776016385 [label="Flask"]
-
-5867776016385 -> 8787866291140 [color="darkgrey"]
-8787866291140 [label="timedelta"]
-subgraph cluster_datetime{
-8787866291140;
-label="datetime"
-}
-5867776016385 -> 8787867641084 [color="darkgrey"]
-8787867641084 [label="chain"]
-subgraph cluster_itertools{
-8787867641084;
-label="itertools"
-}
-5867776016385 -> 5867775969138 [color="darkgrey"]
-5867775969138 [label="Headers"]
-subgraph cluster_werkzeug__datastructures{
-5867775969138;
-label="werkzeug.datastructures"
-}
-5867776016385 -> 5867775969584 [color="darkgrey"]
-5867775969584 [label="ImmutableDict"]
-subgraph cluster_werkzeug__datastructures{
-5867775969584;
-label="werkzeug.datastructures"
-}
-5867776016385 -> 5867775910515 [color="darkgrey"]
-5867775910515 [label="BadRequest"]
-subgraph cluster_werkzeug__exceptions{
-5867775910515;
-label="werkzeug.exceptions"
-}
-5867776016385 -> 5867775917300 [color="darkgrey"]
-5867775917300 [label="BadRequestKeyError"]
-subgraph cluster_werkzeug__exceptions{
-5867775917300;
-label="werkzeug.exceptions"
-}
-5867776016385 -> 5867775910419 [color="darkgrey"]
-5867775910419 [label="HTTPException"]
-subgraph cluster_werkzeug__exceptions{
-5867775910419;
-label="werkzeug.exceptions"
-}
-5867776016385 -> 5867775916747 [color="darkgrey"]
-5867775916747 [label="InternalServerError"]
-subgraph cluster_werkzeug__exceptions{
-5867775916747;
-label="werkzeug.exceptions"
-}
-5867776016385 -> 5867775907664 [color="darkgrey"]
-5867775907664 [label="MethodNotAllowed"]
-subgraph cluster_werkzeug__exceptions{
-5867775907664;
-label="werkzeug.exceptions"
-}
-5867776016385 -> 5867776002301 [color="darkgrey"]
-5867776002301 [label="BuildError"]
-subgraph cluster_werkzeug__routing{
-5867776002301;
-label="werkzeug.routing"
-}
-5867776016385 -> 5867776008010 [color="darkgrey"]
-5867776008010 [label="Map"]
-subgraph cluster_werkzeug__routing{
-5867776008010;
-label="werkzeug.routing"
-}
-5867776016385 -> 5867776002121 [color="darkgrey"]
-5867776002121 [label="RequestRedirect"]
-subgraph cluster_werkzeug__routing{
-5867776002121;
-label="werkzeug.routing"
-}
-5867776016385 -> 5867776001943 [color="darkgrey"]
-5867776001943 [label="RoutingException"]
-subgraph cluster_werkzeug__routing{
-5867776001943;
-label="werkzeug.routing"
-}
-5867776016385 -> 5867776003011 [color="darkgrey"]
-5867776003011 [label="Rule"]
-subgraph cluster_werkzeug__routing{
-5867776003011;
-label="werkzeug.routing"
-}
-5867776016385 -> 5867775981049 [color="darkgrey"]
-5867775981049 [label="BaseResponse"]
-subgraph cluster_werkzeug__wrappers__base_response{
-5867775981049;
-label="werkzeug.wrappers.base_response"
-}
-5867776016385 -> 5867775999169 [color="darkgrey"]
-5867775999169 [label="JSONEncoder"]
-subgraph cluster_flask__json{
-5867775999169;
-label="flask.json"
-}
-5867776016385 -> 5867775999228 [color="darkgrey"]
-5867775999228 [label="JSONDecoder"]
-subgraph cluster_flask__json{
-5867775999228;
-label="flask.json"
-}
-5867776016385 -> 8787867642338 [color="darkgrey"]
-8787867642338 [label="str"]
-subgraph cluster_builtins{
-8787867642338;
-label="builtins"
-}
-5867776016385 -> 5867776009465 [color="darkgrey"]
-5867776009465 [label="Config"]
-subgraph cluster_flask__config{
-5867776009465;
-label="flask.config"
-}
-5867776009465 -> 8787867642812 [color="darkgrey"]
-8787867642812 [label="module"]
-subgraph cluster_builtins{
-8787867642812;
-label="builtins"
-}
-5867776016385 -> 5867776009332 [color="darkgrey"]
-5867776009332 [label="ConfigAttribute"]
-subgraph cluster_flask__config{
-5867776009332;
-label="flask.config"
-}
-5867776009332 -> 5867776009465 [color="darkgrey"]
-5867776009465 [label="Config"]
-subgraph cluster_flask__config{
-5867776009465;
-label="flask.config"
-}
-5867776016385 -> 5867776009903 [color="darkgrey"]
-5867776009903 [label="_AppCtxGlobals"]
-subgraph cluster_flask__ctx{
-5867776009903;
-label="flask.ctx"
-}
-5867776016385 -> 5867776010209 [color="darkgrey"]
-5867776010209 [label="AppContext"]
-subgraph cluster_flask__ctx{
-5867776010209;
-label="flask.ctx"
-}
-5867776016385 -> 5867776010268 [color="darkgrey"]
-5867776010268 [label="RequestContext"]
-subgraph cluster_flask__ctx{
-5867776010268;
-label="flask.ctx"
-}
-5867776010268 -> 5867775910419 [color="darkgrey"]
-5867775910419 [label="HTTPException"]
-subgraph cluster_werkzeug__exceptions{
-5867775910419;
-label="werkzeug.exceptions"
-}
-5867776016385 -> 5867776012082
-5867776012082 [label="_PackageBoundObject"]
-subgraph cluster_flask__helpers{
-5867776012082;
-label="flask.helpers"
-}
-5867776012082 -> 5867775890242 [color="darkgrey"]
-5867775890242 [label="FileSystemLoader"]
-subgraph cluster_jinja2__loaders{
-5867775890242;
-label="jinja2.loaders"
-}
-5867776012082 -> 5867776012023 [color="darkgrey"]
-5867776012023 [label="locked_cached_property"]
-subgraph cluster_flask__helpers{
-5867776012023;
-label="flask.helpers"
-}
-5867776016385 -> 5867776012023 [color="darkgrey"]
-5867776012023 [label="locked_cached_property"]
-subgraph cluster_flask__helpers{
-5867776012023;
-label="flask.helpers"
-}
-5867776016385 -> 5867776015711 [color="darkgrey"]
-5867776015711 [label="SecureCookieSessionInterface"]
-subgraph cluster_flask__sessions{
-5867776015711;
-label="flask.sessions"
-}
-5867776015711 -> 5867775993324 [color="darkgrey"]
-5867775993324 [label="BadSignature"]
-subgraph cluster_itsdangerous__exc{
-5867775993324;
-label="itsdangerous.exc"
-}
-5867776015711 -> 5867775997048 [color="darkgrey"]
-5867775997048 [label="URLSafeTimedSerializer"]
-subgraph cluster_itsdangerous__url_safe{
-5867775997048;
-label="itsdangerous.url_safe"
-}
-5867776015711 -> 5867776015240 [color="darkgrey"]
-5867776015240 [label="SecureCookieSession"]
-subgraph cluster_flask__sessions{
-5867776015240;
-label="flask.sessions"
-}
-5867776015240 -> 5867775970447
-5867775970447 [label="CallbackDict"]
-subgraph cluster_werkzeug__datastructures{
-5867775970447;
-label="werkzeug.datastructures"
-}
-5867776015240 -> 5867776015181
-5867776015181 [label="SessionMixin"]
-subgraph cluster_flask__sessions{
-5867776015181;
-label="flask.sessions"
-}
-5867776015181 -> 5867775803119
-5867775803119 [label="MutableMapping"]
-subgraph cluster_collections__abc{
-5867775803119;
-label="collections.abc"
-}
-5867776015711 -> 5867776015469
-5867776015469 [label="SessionInterface"]
-subgraph cluster_flask__sessions{
-5867776015469;
-label="flask.sessions"
-}
-5867776015469 -> 8787866291088 [color="darkgrey"]
-8787866291088 [label="datetime"]
-subgraph cluster_datetime{
-8787866291088;
-label="datetime"
-}
-5867776015469 -> 5867776015373 [color="darkgrey"]
-5867776015373 [label="NullSession"]
-subgraph cluster_flask__sessions{
-5867776015373;
-label="flask.sessions"
-}
-5867776015373 -> 5867776015240
-5867776015240 [label="SecureCookieSession"]
-subgraph cluster_flask__sessions{
-5867776015240;
-label="flask.sessions"
-}
-5867776016385 -> 5867776015829 [color="darkgrey"]
-5867776015829 [label="DispatchingJinjaLoader"]
-subgraph cluster_flask__templating{
-5867776015829;
-label="flask.templating"
-}
-5867776015829 -> 5867775890183
-5867775890183 [label="BaseLoader"]
-subgraph cluster_jinja2__loaders{
-5867775890183;
-label="jinja2.loaders"
-}
-5867776015829 -> 5867775876111 [color="darkgrey"]
-5867775876111 [label="TemplateNotFound"]
-subgraph cluster_jinja2__exceptions{
-5867775876111;
-label="jinja2.exceptions"
-}
-5867776016385 -> 5867776015770 [color="darkgrey"]
-5867776015770 [label="Environment"]
-subgraph cluster_flask__templating{
-5867776015770;
-label="flask.templating"
-}
-5867776015770 -> 5867775889235
-5867775889235 [label="Environment"]
-subgraph cluster_jinja2__environment{
-5867775889235;
-label="jinja2.environment"
-}
-5867776016385 -> 5867776016223 [color="darkgrey"]
-5867776016223 [label="Request"]
-subgraph cluster_flask__wrappers{
-5867776016223;
-label="flask.wrappers"
-}
-5867776016223 -> 5867775986388
-5867775986388 [label="Request"]
-subgraph cluster_werkzeug__wrappers__request{
-5867775986388;
-label="werkzeug.wrappers.request"
-}
-5867776016223 -> 5867776016164
-5867776016164 [label="JSONMixin"]
-subgraph cluster_flask__wrappers{
-5867776016164;
-label="flask.wrappers"
-}
-5867776016164 -> 5867775910515 [color="darkgrey"]
-5867775910515 [label="BadRequest"]
-subgraph cluster_werkzeug__exceptions{
-5867775910515;
-label="werkzeug.exceptions"
-}
-5867776016164 -> 5867776016031
-5867776016031 [label="JSONMixin"]
-subgraph cluster_werkzeug__wrappers__json{
-5867776016031;
-label="werkzeug.wrappers.json"
-}
-5867776016385 -> 5867776016282 [color="darkgrey"]
-5867776016282 [label="Response"]
-subgraph cluster_flask__wrappers{
-5867776016282;
-label="flask.wrappers"
-}
-5867776016282 -> 5867775986794
-5867775986794 [label="Response"]
-subgraph cluster_werkzeug__wrappers__response{
-5867775986794;
-label="werkzeug.wrappers.response"
-}
-5867776016282 -> 5867776016164
-5867776016164 [label="JSONMixin"]
-subgraph cluster_flask__wrappers{
-5867776016164;
-label="flask.wrappers"
-}
-5867776016223 [label="Request"]
-
-5867776016282 [label="Response"]
-
-5867776016798 [label="Blueprint"]
-
-5867776016798 -> 5867776012082
-5867776012082 [label="_PackageBoundObject"]
-subgraph cluster_flask__helpers{
-5867776012082;
-label="flask.helpers"
-}
-5867776016798 -> 5867776016562 [color="darkgrey"]
-5867776016562 [label="BlueprintSetupState"]
-subgraph cluster_flask__blueprints{
-5867776016562;
-label="flask.blueprints"
-}
-5867776016562 -> 5867776016798 [color="darkgrey"]
-5867776016798 [label="Blueprint"]
-subgraph cluster_flask__blueprints{
-5867776016798;
-label="flask.blueprints"
-}
-5867776009465 [label="Config"]
-
-5867776018317 [label="CliRunner"]
-
-5867775989227 [label="Client"]
-
-5867776012841 [label="ScriptInfo"]
-
-5867776012841 -> 5867776012617 [color="darkgrey"]
-5867776012617 [label="NoAppException"]
-subgraph cluster_flask__cli{
-5867776012617;
-label="flask.cli"
-}
-5867776012617 -> 5867775954104
-5867775954104 [label="UsageError"]
-subgraph cluster_click__exceptions{
-5867775954104;
-label="click.exceptions"
-}
-5867776018488 [label="EnvironBuilder"]
-
-5867776018488 -> 5867775988901
-5867775988901 [label="EnvironBuilder"]
-subgraph cluster_werkzeug__test{
-5867775988901;
-label="werkzeug.test"
-}
-5867776018547 [label="FlaskClient"]
-
-5867776018547 -> 5867775988901 [color="darkgrey"]
-5867775988901 [label="EnvironBuilder"]
-subgraph cluster_werkzeug__test{
-5867775988901;
-label="werkzeug.test"
-}
-5867776018547 -> 5867775989227
-5867775989227 [label="Client"]
-subgraph cluster_werkzeug__test{
-5867775989227;
-label="werkzeug.test"
-}
-5867776018547 -> 5867776018488 [color="darkgrey"]
-5867776018488 [label="EnvironBuilder"]
-subgraph cluster_flask__testing{
-5867776018488;
-label="flask.testing"
-}
-5867776018606 [label="FlaskCliRunner"]
-
-5867776018606 -> 5867776018317
-5867776018317 [label="CliRunner"]
-subgraph cluster_click__testing{
-5867776018317;
-label="click.testing"
-}
-5867776018606 -> 5867776012841 [color="darkgrey"]
-5867776012841 [label="ScriptInfo"]
-subgraph cluster_flask__cli{
-5867776012841;
-label="flask.cli"
-}
-#+end_example
 
 
 #+BEGIN_SRC dot :file images/class-diagram.png :var input=class-diagram :exports results
@@ -1173,40 +747,112 @@ digraph {
 }
 #+END_SRC
 
+
+This diagram shows an even clearer structure, than the component diagram
+provided. The image is rather wide, which is a fault of the graph rendering
+engine rather than the system. There is a hierarchical structure to the system,
+and it is somewhat easy to get an overview of the various classes. We can
+clearly see that the =flask.testing= module is in no way dependent on the rest
+of the framework or vice versa, which details a loose coupling between these,
+presumably making it easier to maintain tests even with a evolving framework. We
+can see =TaggedJSONSerializer=, which seemingly not used anywhere, however I
+presume this to be the fault of the dynamic nature of the programming language,
+however it is difficult to be certain.
+
+One worry, however, is that the =flask.Flask= class seems to be a god-class of
+sorts, a class with too many different roles, as it is interconnected with every
+other class. Utilizing our =LOC= function, we can check if the size of the class
+relatively easy. The LOC function is slightly modified, making it ignores any
+comment.
+#+BEGIN_SRC python :results output :exports both :session main
+
+def LOC(module):
+  try:
+    return len(get_clean_source(module).split("\n"))
+  except (OSError,TypeError):
+    return 0
+
+klass_lines = LOC(flask.Flask)
+total_lines = sum(
+  LOC(module)
+  for module in flask_modules
+)
+pct = klass_lines/total_lines * 100
+print(f"{klass_lines:>4} lines in the Flask class")
+print(f"{total_lines:>4} lines in total")
+print(f"flask.Flask {pct:.2f}% of the framework")
+#+END_SRC
+
 #+RESULTS:
-[[file:images/class-diagram.png]]
+: 1038 lines in the Flask class
+: 4698 lines in total
+: flask.Flask 22.09% of the framework
 
+This is worrying, as this means makes the class difficult to maintain. It should
+almost certainly be broken into several files, classes and responsibilities.
+There are no clear guidelines from the python style guide[fn:pep8] about ideal
+file sizes, however personally I would argue that any file larger than 200-300 lines
+should be split into several files, however this is a singular file.
+We can also easily see if this is a general trend or style of the system.
+#+BEGIN_SRC python :results output :exports both :session main
 
-This diagram shows a lot of dependencies of the =Flask= class. This is expected as
-Flask essentially serves as the entry point for the whole framework, and all
-interactions with the WSGI system. This does, however, make it difficult to
-change the dependency with =Werkzeug=. Whether this is a problem, is probably a
-matter of personal taste.
-* Evaluation
-Without doing proper acceptance tests it is difficult to qualitatively evaluate
-the snippets developed. However I, to mimic a maintenance task, looked at an
-issue with the testing framework, /Unable to extend FlaskClient with
-follow_redirects/,[fn:chosen_issue] and was able to get an overview of the files
-at fault. It did show some shortcomings of the current format. Normally an
-architectural document is currated somewhat and via human interaction is pruned
-to only contain the relevant classes. Finding something in the current solution
-is rather difficult for this reason. The class diagram, for instance, is rather
+print_list(sorted(
+  (
+    (klass, LOC(klass), f"{LOC(klass)/total_lines*100:.2f}%")
+    for klass in flask_klasses
+  ),
+  key=lambda el: el[1], reverse=True
+))
+
+#+END_SRC
+
+#+RESULTS:
+: 45 elements. Among others:
+: - (<class 'flask.app.Flask'>, 2366, '29.53%')
+: - (<class 'flask.blueprints.Blueprint'>, 481, '6.00%')
+: - (<class 'flask.config.Config'>, 230, '2.87%')
+: - (<class 'flask.ctx.RequestContext'>, 222, '2.77%')
+: - (<class 'flask.sessions.SessionInterface'>, 191, '2.38%')
+
+This is clearly not the case, and the =Flask= class is an outlier. This makes
+sense in that the =Flask= class is crucial in system, however it is still
+problematic and should probably be addressed. Large files or classes makes code
+difficult to read and therefore harder to maintain, it can also be a sign of a
+class having too many different responsibilities.
+Without delving into the code I cannot with certainty say that this has to be
+addressed, but it is definitely a red flag, without proper reasoning for this
+choice.
+* Evaluating the view
+Without proper acceptance tests it is difficult to qualitatively evaluate the
+recovered architecture. However I, to mimic a maintenance task, looked
+at an issue on their github repository; /Unable to extend FlaskClient with
+follow_redirects/[fn:chosen_issue]. I did not solve the issue due to limited
+time, however I and was able to get an overview of the files at fault.
+
+It did show some shortcomings of the current format. Normally an architectural
+document is currated somewhat and via human interaction is pruned to only
+contain the relevant classes. Finding something in the current solution is
+rather difficult for this reason. The class diagram, for instance, is rather
 large and it took me some time to find the classes in question, however after
 finding it, it did help me understand the context of the problem. I looked at
-the =open= method of the =FlaskClient=, and already knew what it was inherited
-from and the context.
+the =open= method of the =FlaskClient=, and was rather quickly able to
+understand the context simply based on the diagrams previously seen. The class
+diagram could have benefitted with any short explanation of the purpose of the
+class as well as the exposed methods.
 
 When doing this exercise I did consider whether this reflection-based code
-analysis was preferred, however I did see multiple upsides to this model. These
-are mainly related to the fact the python is an intepreted language, meaning
-that static code analysis can lead to various errors. one example of the
-problems of static code analysis was when I browsed the =flask= source-code on
-Github[fn:repo], where Github can show you references to a class you are looking
-at, however the below image shows an error of this function, as i am looking at
-the =EnvironBuilder= of the =werkzeug= module, however the references are upon
-closer inspection, actually references to =flask.testing.EnvironBuilder=, not
-=werkzeug.test.EnvironBuilder=, however this is difficult to know based on the
-level of static code analysis.
+analysis was a good choice. I find multiple upsides to this analysis method,
+mainly related to the fact that python is an intepreted language, meaning that
+static code analysis can lead to various errors, because it can be difficult to
+easily deduce the type of something.
+
+An example of the problems related to static code analysis was revealed as I
+browsed the =flask= source-code on Github[fn:repo]. Github can show you a list
+of references, when looking at a given identifier, however the below image shows
+an error of this function. I am inspecting =werkzeug.test.EnvironBuilder=,
+however the 7 references are actually references to
+=flask.testing.EnvironBuilder=. The errors is due to the class having the same
+name, so the static analysis cannot tell them apart.
 
 [[./images/github_static_analysis.png][Github Static Code Analysis fails]]
 
@@ -1225,21 +871,20 @@ We can see a close knitted relationship with =werkzeug=, which is expected based
 on the description of the =Flask= framework. We can see that the system seems to
 have a clear structure, and that only a singular cyclic dependencies exists. We
 can also see that the sourcecode is relatively small and simple, based on the
-class count.
+class count. We, however, brought to light the relatively large size of the
+=flask.app.Flask= class, which composed of many thousands of lines. This is
+definitely a codesmell, and should ideally be addressed.
 
-On top of me gaining an interesting insight in the inner workings of the flask
-application, without reading the source code line for line, we can see, through
-the evaluation that the graph can be utilized to gain an understanding of the
-system to a degree that issues are in fact easier to solve.
-This points to the fact that graphs and an overview of this type does help
-collaboration, and might encourage more to help maintain open source projects of
-various types. The current state of the scripts can be used to generate more
-specialized scripts for a given project at hand, or a more generic tool that can
-generate architectural diagrams for any open source system.
+The evaluation showed promising values gained from the relatively simple graphs
+generated, and points towards the value of automatically generated architecture,
+both in the low maintainability compared to manual documents, which is important
+in an open source context, but also in the value a maintainer can gain from
+inspecting these. One could hope that a greater level on documentation would
+encourage more people to take part in the open source community.
 
-I would argue that the work is a partial success however, both in the fact that
-it brings light on the structure of the flask application, as well as the value
-of the scripts as a stand-alone achievement.
+The recovery methodology was interesting to work with, but also showed a new way
+to generate architectural documents, combining the aspects from both dynamic and
+static code analysis.
 
 * Future Work
 ** Interactive tool
@@ -1265,6 +910,26 @@ also, through version control, highlight what areas of the code is most
 contested and most frequently causes conflicts, for instance. The two graphs
 shown here are relatively simple, and even more knowledge could be extracted
 with more time and work.
+** Monitoring based code analysis
+One of the problems faced, when generating the class diagram, was the inability
+to see exactly what types would be supplied to various functions - this resulted
+in some dependencies lacking from the generated diagrams. An alternative
+solution would be to analyze the call stacks and usage while running the system.
+By logging the types of arguments one could come closer to a realistic
+view. An additional benefit would be the ability to distinguish between a
+close knitted association and dependency based on how often one class calls
+another. This could also lead to discovery of ghost code, and various other
+aspects. An obviously problem here would be the overhead created by such a
+monitoring tool, however one could run it on unit tests, granted they represent
+a realistic usage, or on a staging server of sorts.
+** Proposing a concrete new structure for the =Flask= class
+The paper briefly covered the large size of the =flask.app.Flask= class, and
+breaking this into multiple classes, based on responsibilities, would be an
+interesting next task. This is outside the scope of this paper due to the large
+size of the paper, however based on quick glimpses into the class, one could
+probably start by splitting it into these three new responsibilities;
+=Runner=, =ErrorHandler=, =TemplateHandler=. However a concrete division should
+only be agreed upon after closer inspection and analysis.
 
 * Footnotes
 [fn:flask] https://flask.palletsprojects.com/en/1.1.x/
@@ -1282,3 +947,5 @@ with more time and work.
 [fn:3plus1] An Approach to Software Architecture Description Using UML (Revision2.0)
 [fn:chosen_issue] https://github.com/pallets/flask/issues/3396
 [fn:symphony] Van Deursen et al. -- Symphony - View-Driven Architecture ReconstructionFile
+[fn:report_source] https://github.com/C0DK/soft_arch_recovery
+[fn:pep8] https://www.python.org/dev/peps/pep-0008/
